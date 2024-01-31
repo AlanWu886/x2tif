@@ -163,6 +163,9 @@ cython_debug/
 input*
 output*
 test/
+input/
+output/
+test.py
 playground.py
 *.csv
 *.tif
