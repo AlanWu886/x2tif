@@ -9,12 +9,16 @@ from qtpy.QtWidgets import (
 )
 
 class FileDialogGroup(QWidget):
-    def __init__(self, title: str, parent=None):
+    def __init__(self, title: str, parent=None, callback=None):
         super().__init__(parent)
-        self.path = str()
+
+        self._path = str()
+        self._callback = callback
+
         self.dialog = QFileDialog()
         self.dialog.setFileMode(QFileDialog.DirectoryOnly)
         self.dialog.setViewMode(QFileDialog.Detail)
+        self.callback = callback
 
         self.layout = QVBoxLayout()
         self.path_form = QFormLayout()
@@ -25,10 +29,22 @@ class FileDialogGroup(QWidget):
         self.layout.addLayout(self.path_form)
         self.setLayout(self.layout)
 
+    @property
+    def path(self):
+        return self._path
+
+    @path.setter
+    def path(self, new_path):
+        self._path = new_path
+        if self._callback:
+            self._callback(new_path)
+
     def open_file_dialog(self):
         if self.dialog.exec():
             filenames = self.dialog.selectedFiles()
             if filenames:
                 self.path = filenames[0]
-                print(self.path)
+                # print(self.path)
+                # if self.callback:
+                #     self.callback(self.path)
 
