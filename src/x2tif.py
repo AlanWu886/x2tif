@@ -88,6 +88,8 @@ class MyWidget(QWidget):
         self.form_layout.addRow(self.output_dialog)
 
         self.image_stack_input = QLineEdit()
+        self.image_stack_input.setEnabled(False)
+        self.image_stack_input.textChanged.connect(self.toggle_channel_setup)
         self.form_layout.addRow(QLabel("Image Stack(s)"), self.image_stack_input)
 
         self.training_data = QRadioButton("Training Data Batch Conversion")
@@ -142,10 +144,14 @@ class MyWidget(QWidget):
             print(self.parameters['input_path'])
 
             lif = self.reader.preview_image(self.reader.load_file_list(self.parameters['input_path']))
-            self.default_stacks = lif.dims.order.replace('YX', '')
-            self.parameters['image_stacks'] = lif.dims.order.replace('YX', '')
-            self.image_stack_input.setText(self.parameters['image_stacks'])
+            if isinstance(lif, AICSImage):
+                self.image_stack_input.setEnabled(True)
+                self.default_stacks = lif.dims.order.replace('YX', '')
+            # self.parameters['image_stacks'] = lif.dims.order.replace('YX', '')
+            if not self.training_data.isChecked():
+                self.image_stack_input.setText(self.default_stacks)
             # regex_str = r"^(?:([TCZ])(?!.*\1)){0,}$"
+            self.toggle_channel_setup()
             regex_str = r'^(?!.*(.).*\1)[' + str(self.default_stacks) + r']{0,3}$'
             stack_pattern_regex = QRegExp(regex_str)
             stack_pattern_validator = QRegExpValidator(stack_pattern_regex, self.image_stack_input)
@@ -163,9 +169,23 @@ class MyWidget(QWidget):
                 print(self.setup_tab.ch_list)
             print(type(lif.channel_names))
 
+    def toggle_channel_setup(self):
+        if 'C' not in self.image_stack_input.text():
+            self.tabs.setTabVisible(0, True)
+        else:
+            self.tabs.setTabVisible(0, False)
+
     def toggle_training_data(self):
         # self.get_path()
-        self.tabs.setTabVisible(0, self.training_data.isChecked())
+        # self.tabs.setTabVisible(0, self.training_data.isChecked())
+        # if not self.training_data.isChecked():
+        #     self.image_stack_input.setDisabled(False)
+        #     self.image_stack_input.setText(self.default_stacks)
+        # else:
+        #     self.image_stack_input.setDisabled(True)
+        #     self.image_stack_input.setText('')
+        # self.toggle_channel_setup()
+
         if self.training_data.isChecked():
             self.image_stack_input.setDisabled(True)
             if self.image_stack_input.text() != '':
@@ -173,6 +193,7 @@ class MyWidget(QWidget):
         else:
             self.image_stack_input.setDisabled(False)
             self.image_stack_input.setText(self.default_stacks)
+        self.toggle_channel_setup()
 
     def fill_parameters(self):
         print('filling parameters...')
