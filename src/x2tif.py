@@ -51,6 +51,7 @@ class MyWidget(QWidget):
         self.default_stacks = ''
         self.stack_pattern_regex = None
         self.reader_options = {
+            '': 'placeholder',
             '.lif': 'lif2tif',
             '.nd2': 'TBD',
             '.czi': 'TBD'
@@ -74,7 +75,7 @@ class MyWidget(QWidget):
 
         self.form_layout = QFormLayout()
         self.ext_dropdown = QComboBox()
-        self.ext_dropdown.addItem('')
+        # self.ext_dropdown.addItem('')
         self.ext_dropdown.addItems(self.reader_options.keys())
         self.ext_dropdown.currentTextChanged.connect(
             lambda: self.import_module(self.reader_options[self.ext_dropdown.currentText()]))
@@ -104,16 +105,19 @@ class MyWidget(QWidget):
         self.tabs.setTabPosition(QTabWidget.North)
         self.tabs.setMovable(False)
 
-        self.setup_tab = setup_tab.SetupTab(self.convert, parent=self.tabs)
+        self.setup_tab = setup_tab.SetupTab(parent=self.tabs)
         self.tabs.addTab(self.setup_tab, "Channels")
         # self.setup_tab.render_setup_tab(self.setup_tab)
         self.main_layout.addWidget(self.tabs)
         self.tabs.setTabVisible(0, self.training_data.isChecked())
 
+        self.test_btn = QPushButton("Test")
+        self.test_btn.clicked.connect(lambda: self.convert(True))
+        self.main_layout.addWidget(self.test_btn)
         self.convert_btn = QPushButton("Run")
         self.convert_btn.clicked.connect(self.convert)
-
         self.main_layout.addWidget(self.convert_btn)
+
         self.setLayout(self.main_layout)
         # self.tabs.setVisible(False)
 
@@ -127,12 +131,12 @@ class MyWidget(QWidget):
         try:
             self.reader = importlib.import_module(module_name)
             print('select reader: ', self.reader.__name__)
+            if self.reader:
+                print('module imported, enable input dialog')
+                self.input_dialog.browse_btn.setEnabled(True)
 
         except ModuleNotFoundError:
             print("Module not found")
-        finally:
-            print('module imported, enable input dialog')
-            self.input_dialog.browse_btn.setEnabled(True)
 
     def get_path(self, path=None):
         print(self.ext_dropdown.currentText())
@@ -211,16 +215,31 @@ class MyWidget(QWidget):
         self.fill_parameters()
         if self.ext_dropdown.currentText() == '.lif':
             files = self.reader.load_file_list(self.parameters['input_path'])
+            output_path = self.reader.setup_output_folder(self.parameters['output_path'])
             # file_list = list()
             print('converting...')
             print(self.parameters)
             print('test mode: ', test_mode)
             file_list = files if not test_mode else [files[0]]
             self.reader.convert_lif2tif(file_list,
-                                        self.reader.setup_output_folder(self.parameters['output_path']),
+                                        output_path,
                                         desired_stacks=self.parameters['image_stacks'],
                                         image_output_details=self.parameters['channels']
                                         )
+
+            if test_mode:
+                file = self.reader.load_file_list(output_path, 'tif')[0]
+                file_name = os.path.basename(file)   # get color without extension
+                ch_color = os.path.splitext(file_name)[0].split('_')[-1].lower()
+                print(ch_color)
+                try:
+                    self.viewer.open(file, name=os.path.basename(file), colormap=ch_color)
+                    # "GrBu", "GrBu_d", "PiYG", "PuGr", "RdBu", "RdYeBuCy", "autumn", "blues", "cool", "coolwarm",
+                    # "cubehelix", "diverging", "fire", "gist_earth", "gray", "gray_r", "grays", "greens", "hot", "hsl",
+                    # "hsv", "husl", "ice", "inferno", "light_blues", "magma", "orange", "plasma", "reds", "single_hue",
+                    # "spring", "summer", "turbo", "twilight", "twilight_shifted", "viridis", "winter"
+                except KeyError:
+                    self.viewer.open(file, name=os.path.basename(file))
         print('conversion finished')
 
 
