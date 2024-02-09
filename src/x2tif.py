@@ -27,9 +27,6 @@ from qtpy.QtGui import QRegExpValidator
 from UI.widget import file_dialog, ch_group
 from UI.tabs import setup_tab
 
-from napari_plugin_engine import napari_hook_implementation
-
-# import lif2tif
 import importlib
 
 
@@ -127,7 +124,7 @@ class MyWidget(QWidget):
     #     if isinstance(widget, QPushButton):
     #         widget.se
 
-    def import_module(self, module_name):
+    def import_module(self, module_name: str):
         try:
             self.reader = importlib.import_module(module_name)
             print('select reader: ', self.reader.__name__)
@@ -168,10 +165,6 @@ class MyWidget(QWidget):
                     ch = ch_group.ChannelGroup(self.setup_tab.ch_list[i], parent=self)
                     self.ch_group_list.append(ch)
                     self.setup_tab.parameter_form.addRow(ch)
-                    # self.setup_tab.parameter_form.addRow(QLabel(color), ch)
-                    # self.setup_tab.parameter_form.addRow(QLabel(color), ch)
-                print(self.setup_tab.ch_list)
-            print(type(lif.channel_names))
 
     def toggle_channel_setup(self):
         if 'C' not in self.image_stack_input.text():
@@ -180,16 +173,6 @@ class MyWidget(QWidget):
             self.tabs.setTabVisible(0, False)
 
     def toggle_training_data(self):
-        # self.get_path()
-        # self.tabs.setTabVisible(0, self.training_data.isChecked())
-        # if not self.training_data.isChecked():
-        #     self.image_stack_input.setDisabled(False)
-        #     self.image_stack_input.setText(self.default_stacks)
-        # else:
-        #     self.image_stack_input.setDisabled(True)
-        #     self.image_stack_input.setText('')
-        # self.toggle_channel_setup()
-
         if self.training_data.isChecked():
             self.image_stack_input.setDisabled(True)
             if self.image_stack_input.text() != '':
@@ -211,7 +194,7 @@ class MyWidget(QWidget):
             # print(ch.color_input.text(), ch.name_input.text(), ch.ch_info['index'])
         # self.parameters['channels'] = self.setup_tab.ch_list
 
-    def convert(self, test_mode=None):
+    def convert(self, test_mode: bool = None):
         self.fill_parameters()
         if self.ext_dropdown.currentText() == '.lif':
             files = self.reader.load_file_list(self.parameters['input_path'])
@@ -231,14 +214,15 @@ class MyWidget(QWidget):
                 file = self.reader.load_file_list(output_path, 'tif')[0]
                 file_name = os.path.basename(file)   # get color without extension
                 ch_color = os.path.splitext(file_name)[0].split('_')[-1].lower()
-                print(ch_color)
                 try:
                     self.viewer.open(file, name=os.path.basename(file), colormap=ch_color)
+                    # colormap list
                     # "GrBu", "GrBu_d", "PiYG", "PuGr", "RdBu", "RdYeBuCy", "autumn", "blues", "cool", "coolwarm",
                     # "cubehelix", "diverging", "fire", "gist_earth", "gray", "gray_r", "grays", "greens", "hot", "hsl",
                     # "hsv", "husl", "ice", "inferno", "light_blues", "magma", "orange", "plasma", "reds", "single_hue",
                     # "spring", "summer", "turbo", "twilight", "twilight_shifted", "viridis", "winter"
                 except KeyError:
+                    print(f'colormap not found as {ch_color}, using default colormap of grayscale')
                     self.viewer.open(file, name=os.path.basename(file))
         print('conversion finished')
 
@@ -251,20 +235,7 @@ def main():
     napari.run()
 
 
-# def show_dock_widget(viewer):
-#     toTif = MyWidget(viewer)
-#     viewer.window.add_dock_widget(toTif)
-#
-# def napari_experimental_provide_dock_widget(viewer):
-#     return {'name': 'toTif', 'dock_widget': show_dock_widget()}
-
 if __name__ == '__main__':
     main()
-    # user_input = manage_user_input()
-    # file_list = load_file_list()
-    # output_path = setup_output_folder()
-    # lif_to_tif_by_ch(file_list, output_path, eval(user_input.img_format), user_input.ch_pattern, eval(user_input.ch_color), eval(user_input.ch_num), user_input.dims_out)
 
-    print("conversion finished")
 
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
