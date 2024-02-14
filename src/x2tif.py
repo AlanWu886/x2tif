@@ -1,7 +1,9 @@
 import os
-import re
+
 from aicsimageio import AICSImage
 import napari
+from napari.qt.threading import thread_worker
+# from qtpy.QtCore import pyqtSlot
 from qtpy.QtCore import Qt, QRegExp
 from qtpy.QtWidgets import (
     QComboBox,
@@ -25,11 +27,12 @@ import importlib
 
 
 class MyWidget(QWidget):
-    """Any QtWidgets.QWidget or magicgui.widgets.Widget subclass can be used."""
-
     def __init__(self, napari_viewer, parent=None):
         super().__init__(parent)
         self.viewer = napari_viewer
+        # self.threadpool = QThreadPool()
+        # print("Maximum limit: %d threads" % self.threadpool.maxThreadCount())
+
         self.parameters = \
             {
                 'input_path': str | os.PathLike,
@@ -324,9 +327,59 @@ class MyWidget(QWidget):
             # print(ch.color_input.text(), ch.name_input.text(), ch.ch_info['index'])
         # self.parameters['channels'] = self.setup_tab.ch_list
 
+    def _toggle_btns(self, state: bool):
+        # btn.setText('Converting...')
+        run_label = 'Converting...' if state else 'Run'
+        test_label = 'Converting...' if state else 'Test'
+        self.convert_btn.setDisabled(state)
+        self.test_btn.setDisabled(state)
+        self.convert_btn.setText(run_label)
+        self.test_btn.setText(test_label)
+        # btn.setHidden(state)
+
+    @thread_worker
+    def test_convert(self, file_list: list, output_path: str | os.PathLike):
+        new_img_details = {
+            'ch_colors': self.parameters['channels']['ch_colors'],
+            'ch_names': self.parameters['channels']['ch_names'],
+            'dims': ''
+        }
+        file_name = os.path.splitext(os.path.basename(file_list))[0]
+        scene_name = self.preview.current_scene.replace('/', '_').replace('\\', '_').replace(' ', '_')
+        # output_path = self.reader.setup_output_folder(self.parameters['output_path'])
+        split_dims, new_img_details['dims'] = self.reader.reorder_hyperstack(self.preview.dims,
+                                                                             self.parameters['image_stacks'])
+        test_output_path = os.path.join(output_path, file_name + '_' + scene_name)
+        self.reader.gen_stack_combo(
+            test_output_path,
+            self.preview,
+            vars(self.preview.dims),
+            split_dims,
+            new_img_details
+        )
+
+    def show_test_result(self, output_path: str | os.PathLike):
+        tif_list = self.reader.load_file_list(output_path, 'tif')
+        for tif in tif_list:
+            tif_name = os.path.basename(tif)  # get color without extension
+            ch_color = os.path.splitext(tif_name)[0].split('_')[-1].lower()
+            try:
+                self.viewer.open(os.path.join(output_path, tif_name), name=tif_name, colormap=ch_color)
+                # colormap list
+                # "GrBu", "GrBu_d", "PiYG", "PuGr", "RdBu", "RdYeBuCy", "autumn", "blues", "cool", "coolwarm",
+                # "cubehelix", "diverging", "fire", "gist_earth", "gray", "gray_r", "grays", "greens", "hot", "hsl",
+                # "hsv", "husl", "ice", "inferno", "light_blues", "magma", "orange", "plasma", "reds", "single_hue",
+                # "spring", "summer", "turbo", "twilight", "twilight_shifted", "viridis", "winter"
+            except KeyError:
+                print(f'colormap not found as {ch_color}, using default colormap of grayscale')
+                self.viewer.open(os.path.join(output_path, tif_name), name=tif_name)
+        self._toggle_btns(False)
+
     def convert(self, test_mode: bool = None):
+        # self._toggle_btns(True)
         self.fill_parameters()
         self.viewer.layers.clear()
+
         if self.ext_dropdown.currentText() == '.lif':
             files = self.reader.load_file_list(self.parameters['input_path'])
             output_path = self.reader.setup_output_folder(self.parameters['output_path'])
@@ -336,45 +389,59 @@ class MyWidget(QWidget):
             print('test mode: ', test_mode)
             file_list = files if not test_mode else files[0]
             if not test_mode:
-                self.reader.convert_lif2tif(file_list,
-                                            output_path,
-                                            desired_stacks=self.parameters['image_stacks'],
-                                            image_output_details=self.parameters['channels']
-                                            )
+                @thread_worker
+                def batch_convert():
+                    self.reader.convert_lif2tif(file_list,
+                                                output_path,
+                                                desired_stacks=self.parameters['image_stacks'],
+                                                image_output_details=self.parameters['channels']
+                                                )
+                batch = batch_convert()
+                batch.started.connect(lambda: self._toggle_btns(True))
+                batch.finished.connect(lambda: self._toggle_btns(False))
+                batch.start()
 
             if test_mode:
-                new_img_details = {
-                    'ch_colors': self.parameters['channels']['ch_colors'],
-                    'ch_names': self.parameters['channels']['ch_names'],
-                    'dims': ''
-                }
-                file_name = os.path.splitext(os.path.basename(file_list))[0]
-                scene_name = self.preview.current_scene.replace('/', '_').replace('\\', '_').replace(' ', '_')
-                # output_path = self.reader.setup_output_folder(self.parameters['output_path'])
-                split_dims, new_img_details['dims'] = self.reader.reorder_hyperstack(self.preview.dims, self.parameters['image_stacks'])
-                test_output_path = os.path.join(output_path, file_name + '_' + scene_name)
-                self.reader.gen_stack_combo(
-                    test_output_path,
-                    self.preview,
-                    vars(self.preview.dims),
-                    split_dims,
-                    new_img_details
-                                            )
-                tif_list = self.reader.load_file_list(output_path, 'tif')
-                for tif in tif_list:
-                    tif_name = os.path.basename(tif)   # get color without extension
-                    ch_color = os.path.splitext(tif_name)[0].split('_')[-1].lower()
-                    try:
-                        self.viewer.open(os.path.join(output_path, tif_name), name=tif_name, colormap=ch_color)
-                        # colormap list
-                        # "GrBu", "GrBu_d", "PiYG", "PuGr", "RdBu", "RdYeBuCy", "autumn", "blues", "cool", "coolwarm",
-                        # "cubehelix", "diverging", "fire", "gist_earth", "gray", "gray_r", "grays", "greens", "hot", "hsl",
-                        # "hsv", "husl", "ice", "inferno", "light_blues", "magma", "orange", "plasma", "reds", "single_hue",
-                        # "spring", "summer", "turbo", "twilight", "twilight_shifted", "viridis", "winter"
-                    except KeyError:
-                        print(f'colormap not found as {ch_color}, using default colormap of grayscale')
-                        self.viewer.open(os.path.join(output_path, tif_name), name=tif_name)
+                # new_img_details = {
+                #     'ch_colors': self.parameters['channels']['ch_colors'],
+                #     'ch_names': self.parameters['channels']['ch_names'],
+                #     'dims': ''
+                # }
+                # file_name = os.path.splitext(os.path.basename(file_list))[0]
+                # scene_name = self.preview.current_scene.replace('/', '_').replace('\\', '_').replace(' ', '_')
+                # # output_path = self.reader.setup_output_folder(self.parameters['output_path'])
+                # split_dims, new_img_details['dims'] = self.reader.reorder_hyperstack(self.preview.dims, self.parameters['image_stacks'])
+                # test_output_path = os.path.join(output_path, file_name + '_' + scene_name)
+                # self.reader.gen_stack_combo(
+                #     test_output_path,
+                #     self.preview,
+                #     vars(self.preview.dims),
+                #     split_dims,
+                #     new_img_details
+                #                             )
+                test = self.test_convert(file_list, output_path)
+                test.started.connect(lambda: self._toggle_btns(True))
+                test.finished.connect(lambda: self.show_test_result(output_path))
+                test.start()
+                # tif_list = self.reader.load_file_list(output_path, 'tif')
+                # for tif in tif_list:
+                #     tif_name = os.path.basename(tif)   # get color without extension
+                #     ch_color = os.path.splitext(tif_name)[0].split('_')[-1].lower()
+                #     try:
+                #         self.viewer.open(os.path.join(output_path, tif_name), name=tif_name, colormap=ch_color)
+                #         # colormap list
+                #         # "GrBu", "GrBu_d", "PiYG", "PuGr", "RdBu", "RdYeBuCy", "autumn", "blues", "cool", "coolwarm",
+                #         # "cubehelix", "diverging", "fire", "gist_earth", "gray", "gray_r", "grays", "greens", "hot", "hsl",
+                #         # "hsv", "husl", "ice", "inferno", "light_blues", "magma", "orange", "plasma", "reds", "single_hue",
+                #         # "spring", "summer", "turbo", "twilight", "twilight_shifted", "viridis", "winter"
+                #     except KeyError:
+                #         print(f'colormap not found as {ch_color}, using default colormap of grayscale')
+                #         self.viewer.open(os.path.join(output_path, tif_name), name=tif_name)
         print('conversion finished')
+        self.convert_btn.setText('Run')
+        self.test_btn.setText('Test')
+        self.convert_btn.setDisabled(False)
+        self.test_btn.setDisabled(False)
 
 
 def main():
